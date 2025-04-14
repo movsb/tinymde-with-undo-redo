@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" >
+<script src="https://unpkg.com/tiny-markdown-editor/dist/tiny-mde.min.js"></script>
+<link rel="stylesheet" type="text/css" href="https://unpkg.com/tiny-markdown-editor/dist/tiny-mde.min.css"/>
+<style>
+.TinyMDE {
+	height: 300px;
+	overflow: auto;
+}
+</style>
+</head>
+<body>
+<div id="container">
+	<textarea id="content" autocomplete="off"></textarea>
+	<div id="command-container"></div>
+</div>
+<script>
+const editor = new TinyMDE.Editor({textarea: 'content'});
+const commandBar = new TinyMDE.CommandBar({
+	element: document.getElementById('command-container'),
+	editor: editor,
+	commands: [
+		{
+			name: `undo`,
+			title: `Undo`,
+			innerHTML: `↩️`,
+			action: editor => {
+				editor._stack.undo();
+			},
+		},
+		{
+			name: `redo`,
+			title: `Redo`,
+			innerHTML: `↪️`,
+			action: editor => {
+				editor._stack.redo();
+			},
+		},
+	],
+});
+class UndoRedoStack {
+	constructor(editor) {
+		this._editor = editor;
+		this._editor._stack = this;
+		this._stack = [];
+		this._max= 100;
+		this._debouncing;
+		this._ignore_content = false;
+		this._ignore_selection = false;
+
+		// initial content
+		this._index = -1;
+		this._save(editor.getContent(), {row:0,col:0},{row:0,col:0});
+
+		editor.addEventListener('change', (e) => {
+			if (this._ignore_content) {
+				this._ignore_content = false;
+				return;
+			}
+			clearInterval(this._debouncing);
+			this._debouncing = setTimeout(() => {
+				this._save(e.content,
+					editor.getSelection(true),
+					editor.getSelection(),
+				);
+			}, 250);
+			this._ignore_selection = true;
+		});
+		editor.addEventListener('selection', e => {
+			if (this._ignore_selection) {
+				this._ignore_selection = false;
+				return;
+			}
+			let i = this._stack[this._index];
+			i.start = e.anchor;
+			i.end = e.focus;
+		});
+	}
+	undo() {
+		if (this._index <= 0) { return; }
+		this._use(this._stack[--this._index]);
+	}
+	redo() {
+		if(this._index+1 >= this._stack.length) { return; }
+		this._use(this._stack[++this._index]);
+	}
+	_save(content, start, end) {
+		// save undo stack and clear redo stack
+		this._stack[++this._index] = { content, start, end };
+		this._stack.length = this._index+1;
+
+		if (this._stack.length > this._max) {
+			this._stack.shift();
+			this._index--;
+		}
+	}
+	_use(e) {
+		if (!e) { return; }
+		this._ignore_content = true;
+		this._editor.setContent(e.content);
+		this._ignore_selection = true;
+		this._editor.setSelection(e.end, e.start);
+	}
+}
+new UndoRedoStack(editor);
+</script>
+<p>GitHub:<a href="https://github.com/movsb/tinymde-with-undo-redo">https://github.com/movsb/tinymde-with-undo-redo</a></p>
+</body>
+</html>
